@@ -36,7 +36,7 @@ pgrx::pg_module_magic!();
 /// Return the pg_failover_slots_rs extension version.
 #[pg_extern]
 fn pg_failover_slots_rs_version() -> &'static str {
-    "1.0.0"
+    env!("CARGO_PKG_VERSION")
 }
 
 /// Extension initialization — called when PostgreSQL loads the shared library.

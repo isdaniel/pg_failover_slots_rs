@@ -40,16 +40,19 @@ fn test_guc_standby_slot_names_default_empty() {
 
 #[pg_test]
 fn test_pg_failover_slots_rs_version_fn() {
-    let version = crate::pg_failover_slots_rs_version();
-    assert_eq!(version, "1.0.0");
+    assert_eq!(crate::pg_failover_slots_rs_version(), env!("CARGO_PKG_VERSION"));
 }
 
 #[pg_test]
 fn test_pg_failover_slots_rs_version_via_spi() {
-    let result = Spi::get_one::<String>(
-        "SELECT pg_failover_slots_rs_version()",
-    );
-    assert_eq!(result.unwrap(), Some("1.0.0".to_string()));
+    let result = Spi::get_one::<String>("SELECT pg_failover_slots_rs_version()");
+    assert_eq!(result.unwrap(), Some(env!("CARGO_PKG_VERSION").to_string()));
+}
+
+#[pg_test]
+fn test_version_guc_matches_cargo() {
+    let guc_val = crate::guc::VERSION.get().expect("version GUC should be set");
+    assert_eq!(guc_val.to_str().unwrap(), env!("CARGO_PKG_VERSION"));
 }
 
 // =========================================================================

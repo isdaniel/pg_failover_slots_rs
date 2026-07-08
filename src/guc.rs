@@ -12,15 +12,23 @@
 
 use pgrx::guc::*;
 use pgrx::prelude::*;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 // ---------------------------------------------------------------------------
 // GUC static settings
 // ---------------------------------------------------------------------------
 
+/// Extension version, single source of truth = Cargo package version.
+/// Built as a const `&CStr` from CARGO_PKG_VERSION at compile time.
+const VERSION_CSTR: &CStr =
+    match CStr::from_bytes_with_nul(concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes()) {
+        Ok(s) => s,
+        Err(_) => panic!("CARGO_PKG_VERSION contains an interior NUL byte"),
+    };
+
 /// Read-only version string.
 pub static VERSION: GucSetting<Option<CString>> =
-    GucSetting::<Option<CString>>::new(Some(c"1.2.0"));
+    GucSetting::<Option<CString>>::new(Some(VERSION_CSTR));
 
 /// Comma-separated list of physical slot names that must confirm before logical
 /// data is sent.  Primary-side setting.
@@ -40,8 +48,7 @@ pub static SYNCHRONIZE_SLOT_NAMES: GucSetting<Option<CString>> =
 pub static DROP_EXTRA_SLOTS: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 /// DSN for connecting to primary.  Falls back to `primary_conninfo`.
-pub static PRIMARY_DSN: GucSetting<Option<CString>> =
-    GucSetting::<Option<CString>>::new(Some(c""));
+pub static PRIMARY_DSN: GucSetting<Option<CString>> = GucSetting::<Option<CString>>::new(Some(c""));
 
 /// Worker nap time between sync cycles in milliseconds.
 pub static WORKER_NAP_TIME: GucSetting<i32> = GucSetting::<i32>::new(60_000);

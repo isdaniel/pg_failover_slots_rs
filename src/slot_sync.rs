@@ -38,10 +38,7 @@ pub unsafe fn get_database_oid(dbname: &str) -> pg_sys::Oid {
         pg_sys::Datum::from(dbname_c.as_ptr()),
     );
 
-    let relation = pg_sys::table_open(
-        pg_sys::DatabaseRelationId,
-        pg_sys::AccessShareLock as _,
-    );
+    let relation = pg_sys::table_open(pg_sys::DatabaseRelationId, pg_sys::AccessShareLock as _);
 
     // Use index scan only if critical shared relcaches have been built.
     // This matches the C code: systable_beginscan(..., criticalSharedRelcachesBuilt, ...)
@@ -201,9 +198,7 @@ unsafe fn wait_for_primary_slot_catchup(remote_slot: &mut RemoteSlot) -> bool {
 /// Must be called during recovery with proper transaction context.
 pub unsafe fn synchronize_one_slot(remote_slot: &mut RemoteSlot) {
     if !pg_sys::RecoveryInProgress() {
-        warning!(
-            "pg_failover_slots_rs: attempted to sync slot from master when not in recovery"
-        );
+        warning!("pg_failover_slots_rs: attempted to sync slot from master when not in recovery");
         return;
     }
 
@@ -242,7 +237,7 @@ pub unsafe fn synchronize_one_slot(remote_slot: &mut RemoteSlot) {
         // Slot exists locally — acquire and update
         let name_c = CString::new(remote_slot.name.as_str()).unwrap();
 
-        #[cfg(any(feature = "pg15", feature = "pg16", feature = "pg17"))]
+        #[cfg(any(feature = "pg14", feature = "pg15", feature = "pg16", feature = "pg17"))]
         pg_sys::ReplicationSlotAcquire(name_c.as_ptr(), true);
 
         #[cfg(feature = "pg18")]
@@ -265,10 +260,7 @@ pub unsafe fn synchronize_one_slot(remote_slot: &mut RemoteSlot) {
         }
 
         pg_sys::LogicalConfirmReceivedLocation(remote_slot.confirmed_lsn);
-        pg_sys::LogicalIncreaseXminForSlot(
-            remote_slot.confirmed_lsn,
-            remote_slot.catalog_xmin,
-        );
+        pg_sys::LogicalIncreaseXminForSlot(remote_slot.confirmed_lsn, remote_slot.catalog_xmin);
         pg_sys::LogicalIncreaseRestartDecodingForSlot(
             remote_slot.confirmed_lsn,
             remote_slot.restart_lsn,
@@ -287,7 +279,7 @@ pub unsafe fn synchronize_one_slot(remote_slot: &mut RemoteSlot) {
         // Slot does not exist locally — create it
         let name_c = CString::new(remote_slot.name.as_str()).unwrap();
 
-        #[cfg(any(feature = "pg15", feature = "pg16"))]
+        #[cfg(any(feature = "pg14", feature = "pg15", feature = "pg16"))]
         pg_sys::ReplicationSlotCreate(
             name_c.as_ptr(),
             true,
@@ -320,7 +312,10 @@ pub unsafe fn synchronize_one_slot(remote_slot: &mut RemoteSlot) {
         // Reserve WAL
         pg_sys::ReplicationSlotReserveWal();
 
-        // Compute xmin
+        pg_sys::LWLockAcquire(
+            pg_compat::replication_slot_control_lock(),
+            pg_sys::LWLockMode::LW_EXCLUSIVE,
+        );
         pg_sys::LWLockAcquire(
             pg_compat::proc_array_lock(),
             pg_sys::LWLockMode::LW_EXCLUSIVE,
@@ -330,27 +325,25 @@ pub unsafe fn synchronize_one_slot(remote_slot: &mut RemoteSlot) {
         (*slot).data.catalog_xmin = xmin_horizon;
         pg_sys::ReplicationSlotsComputeRequiredXmin(true);
         pg_sys::LWLockRelease(pg_compat::proc_array_lock());
+        pg_sys::LWLockRelease(pg_compat::replication_slot_control_lock());
 
-        // Check if we can satisfy the remote slot requirements
-        if remote_slot.restart_lsn < (*pg_sys::MyReplicationSlot).data.restart_lsn
+        // Check if we can satisfy the remote slot requirements; if not, wait for
+        // the primary slot to catch up (bailing out if the wait is interrupted).
+        if (remote_slot.restart_lsn < (*pg_sys::MyReplicationSlot).data.restart_lsn
             || pg_sys::TransactionIdPrecedes(
                 remote_slot.catalog_xmin,
                 (*pg_sys::MyReplicationSlot).data.catalog_xmin,
-            )
+            ))
+            && !wait_for_primary_slot_catchup(remote_slot)
         {
-            if !wait_for_primary_slot_catchup(remote_slot) {
-                pg_sys::ReplicationSlotRelease();
-                pg_sys::PopActiveSnapshot();
-                pg_sys::CommitTransactionCommand();
-                return;
-            }
+            pg_sys::ReplicationSlotRelease();
+            pg_sys::PopActiveSnapshot();
+            pg_sys::CommitTransactionCommand();
+            return;
         }
 
         pg_sys::LogicalConfirmReceivedLocation(remote_slot.confirmed_lsn);
-        pg_sys::LogicalIncreaseXminForSlot(
-            remote_slot.confirmed_lsn,
-            remote_slot.catalog_xmin,
-        );
+        pg_sys::LogicalIncreaseXminForSlot(remote_slot.confirmed_lsn, remote_slot.catalog_xmin);
         pg_sys::LogicalIncreaseRestartDecodingForSlot(
             remote_slot.confirmed_lsn,
             remote_slot.restart_lsn,
@@ -469,9 +462,7 @@ pub unsafe fn synchronize_failover_slots(sleep_time: i64) -> i64 {
         }
     }
 
-    if safe_lsn == INVALID_XLOG_REC_PTR
-        || (*wal_rcv).latestWalEnd == INVALID_XLOG_REC_PTR
-    {
+    if safe_lsn == INVALID_XLOG_REC_PTR || (*wal_rcv).latestWalEnd == INVALID_XLOG_REC_PTR {
         warning!(
             "pg_failover_slots_rs: cannot synchronize replication slot positions yet \
              because feedback was not sent yet"
@@ -494,8 +485,7 @@ pub unsafe fn synchronize_failover_slots(sleep_time: i64) -> i64 {
     }
 
     for rs in &mut slots {
-        let receive_ptr =
-            pg_sys::GetWalRcvFlushRecPtr(std::ptr::null_mut(), std::ptr::null_mut());
+        let receive_ptr = pg_sys::GetWalRcvFlushRecPtr(std::ptr::null_mut(), std::ptr::null_mut());
 
         if rs.confirmed_lsn > receive_ptr {
             rs.confirmed_lsn = receive_ptr;

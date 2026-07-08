@@ -84,10 +84,7 @@ pub unsafe fn hot_standby_active() -> bool {
 ///
 /// In PostgreSQL, TimestampTz is microseconds since 2000-01-01.
 #[inline]
-pub fn timestamp_tz_plus_milliseconds(
-    tz: pg_sys::TimestampTz,
-    ms: i64,
-) -> pg_sys::TimestampTz {
+pub fn timestamp_tz_plus_milliseconds(tz: pg_sys::TimestampTz, ms: i64) -> pg_sys::TimestampTz {
     tz + ms * 1000
 }
 
@@ -117,9 +114,7 @@ pub unsafe fn clear_config_reload_pending() {
 /// `Option<unsafe extern "C-unwind" fn(c_int)>` but the signal handler
 /// functions are plain `unsafe fn(c_int)`.
 #[inline]
-pub unsafe fn as_pqsigfunc(
-    f: unsafe fn(c_int),
-) -> pg_sys::pqsigfunc {
+pub unsafe fn as_pqsigfunc(f: unsafe fn(c_int)) -> pg_sys::pqsigfunc {
     // The functions have the same ABI; the distinction is only in Rust's type system.
     Some(std::mem::transmute::<
         unsafe fn(c_int),

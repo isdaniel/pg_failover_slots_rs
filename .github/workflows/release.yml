@@ -1,0 +1,93 @@
+name: Release
+
+# A release is cut by pushing a tag like `v0.1.0`. The release only happens
+# after ALL checks (build + unit + integration) pass and the tag is verified to
+# be on main and to match the crate version.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # Reuse the exact same gate as CI — build + lint + unit + docker integration.
+  checks:
+    name: Checks
+    uses: ./.github/workflows/ci-checks.yml
+    secrets: inherit
+
+  release:
+    name: Package & publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: checks          # <-- release is blocked until every check passes
+    permissions:
+      contents: write      # required by `gh release create`
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify the tag is on main
+        run: |
+          git fetch origin main
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Tag $GITHUB_REF_NAME is on main. Proceeding."
+          else
+            echo "::error::Tag $GITHUB_REF_NAME is NOT on main; refusing to release."
+            exit 1
+          fi
+
+      - name: Extract version from tag
+        id: ver
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/.*= "//; s/".*//')
+          TAG_VERSION="${{ steps.ver.outputs.version }}"
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "Git tag version:    $TAG_VERSION"
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Cargo.toml version ($CARGO_VERSION) != tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Install PostgreSQL 15-18 headers and build dependencies
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            postgresql-server-dev-14 postgresql-server-dev-15 postgresql-server-dev-16 \
+            postgresql-server-dev-17 postgresql-server-dev-18 \
+            libpq-dev clang libclang-dev pkg-config build-essential
+
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Install cargo-pgrx 0.19.1
+        run: cargo install --locked cargo-pgrx --version 0.19.1
+
+      - name: Package the extension for PG14-18
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for pg in 14 15 16 17 18; do
+            pgcfg="/usr/lib/postgresql/${pg}/bin/pg_config"
+            echo "=== Packaging for PG${pg} ==="
+            cargo pgrx init "--pg${pg}" "$pgcfg"
+            cargo pgrx package --no-default-features --features "pg${pg}" --pg-config "$pgcfg"
+            tar -C "target/release/pg_failover_slots_rs-pg${pg}" \
+                -czf "dist/pg_failover_slots_rs-${{ steps.ver.outputs.tag }}-pg${pg}.tar.gz" .
+          done
+          ls -l dist
+
+      - name: Create the GitHub Release with artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/*.tar.gz \
+            --title "Release ${GITHUB_REF_NAME}" \
+            --generate-notes

@@ -1,0 +1,85 @@
+name: CI Checks
+
+# Reusable workflow: the single source of "everything that must pass".
+# Called by ci.yml (push/PR) and by release.yml (before publishing a release).
+on:
+  workflow_call:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-lint-unit:
+    name: Build, lint & unit tests (PG${{ matrix.pg }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [14,15,16,17,18]   
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install PostgreSQL ${{ matrix.pg }} headers and build dependencies
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            postgresql-${{ matrix.pg }} postgresql-server-dev-${{ matrix.pg }} libpq-dev \
+            clang libclang-dev pkg-config build-essential
+
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml -> 1.96.0 + rustfmt/clippy)
+        run: |
+          rustup show
+          rustc --version
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-pgrx 0.19.1
+        run: cargo install --locked cargo-pgrx --version 0.19.1
+
+      - name: Initialize pgrx against system PostgreSQL ${{ matrix.pg }}
+        run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --no-default-features --features pg${{ matrix.pg }} -- -D warnings
+
+      - name: Build (package)
+        run: cargo pgrx package --no-default-features --features pg${{ matrix.pg }} --pg-config /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+
+      - name: Grant write access to the extension dirs (pgrx test install)
+        run: |
+          PKGLIB="$(/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config --pkglibdir)"
+          EXTDIR="$(/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config --sharedir)/extension"
+          sudo chmod a+w "$PKGLIB" "$EXTDIR"
+
+      - name: Unit tests
+        run: cargo pgrx test pg${{ matrix.pg }}
+
+  integration:
+    name: Docker integration (HA failover + physical-before-logical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show Docker versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Physical-before-logical ordering
+        run: tests/integration/run_physical_before_logical_test.sh
+
+      - name: HA failover with logical slot transfer
+        run: tests/integration/run_ha_failover_test.sh
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          cd tests/integration
+          docker compose logs --no-color || true

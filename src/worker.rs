@@ -17,8 +17,8 @@ use std::ffi::CString;
 pub unsafe fn register_background_worker() {
     let mut bgw: pg_sys::BackgroundWorker = std::mem::zeroed();
 
-    bgw.bgw_flags = (pg_sys::BGWORKER_SHMEM_ACCESS
-        | pg_sys::BGWORKER_BACKEND_DATABASE_CONNECTION) as _;
+    bgw.bgw_flags =
+        (pg_sys::BGWORKER_SHMEM_ACCESS | pg_sys::BGWORKER_BACKEND_DATABASE_CONNECTION) as _;
     bgw.bgw_start_time = pg_sys::BgWorkerStartTime::BgWorkerStart_ConsistentState;
     bgw.bgw_restart_time = 10;
 
@@ -56,10 +56,7 @@ pub unsafe extern "C-unwind" fn pg_failover_slots_rs_main(_main_arg: pg_sys::Dat
             pg_sys::SIGUSR1 as _,
             pg_compat::as_pqsigfunc(pg_sys::procsignal_sigusr1_handler),
         );
-        pg_sys::pqsignal(
-            pg_sys::SIGTERM as _,
-            pg_compat::as_pqsigfunc(pg_sys::die),
-        );
+        pg_sys::pqsignal(pg_sys::SIGTERM as _, pg_compat::as_pqsigfunc(pg_sys::die));
         pg_sys::pqsignal(
             pg_sys::SIGHUP as _,
             pg_compat::as_pqsigfunc(pg_sys::SignalHandlerForConfigReload),
@@ -71,10 +68,7 @@ pub unsafe extern "C-unwind" fn pg_failover_slots_rs_main(_main_arg: pg_sys::Dat
             pg_sys::SIGUSR1 as _,
             pg_compat::as_pqsigfunc(pg_sys::procsignal_sigusr1_handler),
         );
-        pg_sys::pqsignal_be(
-            pg_sys::SIGTERM as _,
-            pg_compat::as_pqsigfunc(pg_sys::die),
-        );
+        pg_sys::pqsignal_be(pg_sys::SIGTERM as _, pg_compat::as_pqsigfunc(pg_sys::die));
         pg_sys::pqsignal_be(
             pg_sys::SIGHUP as _,
             pg_compat::as_pqsigfunc(pg_sys::SignalHandlerForConfigReload),
@@ -84,7 +78,12 @@ pub unsafe extern "C-unwind" fn pg_failover_slots_rs_main(_main_arg: pg_sys::Dat
 
     // Identify ourselves in pg_stat_activity
     let appname_raw = std::ffi::CStr::from_ptr((*pg_sys::MyBgworkerEntry).bgw_name.as_ptr());
-    let appname = CString::new(appname_raw.to_str().unwrap_or("pg_failover_slots_rs worker")).unwrap();
+    let appname = CString::new(
+        appname_raw
+            .to_str()
+            .unwrap_or("pg_failover_slots_rs worker"),
+    )
+    .unwrap();
     let option = CString::new("application_name").unwrap();
     pg_sys::SetConfigOption(
         option.as_ptr(),
@@ -96,11 +95,7 @@ pub unsafe extern "C-unwind" fn pg_failover_slots_rs_main(_main_arg: pg_sys::Dat
     log!("pg_failover_slots_rs: starting pg_failover_slots_rs replica worker");
 
     // Initialize connection to pinned catalogs
-    pg_sys::BackgroundWorkerInitializeConnection(
-        std::ptr::null(),
-        std::ptr::null(),
-        0,
-    );
+    pg_sys::BackgroundWorkerInitializeConnection(std::ptr::null(), std::ptr::null(), 0);
 
     // Main wait loop
     loop {

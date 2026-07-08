@@ -54,8 +54,7 @@ extern "C" {
 // ---------------------------------------------------------------------------
 
 /// Old PqCommMethods pointer (before our replacement).
-static OLD_PQ_COMM_METHODS: AtomicPtr<PQcommMethods> =
-    AtomicPtr::new(std::ptr::null_mut());
+static OLD_PQ_COMM_METHODS: AtomicPtr<PQcommMethods> = AtomicPtr::new(std::ptr::null_mut());
 
 /// Old ClientAuthentication_hook (if any).
 static OLD_CLIENT_AUTH_HOOK: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
@@ -70,14 +69,18 @@ static mut STANDBY_SLOT_NAMES_OLDEST_FLUSH_LSN: pg_sys::XLogRecPtr = 0;
 unsafe extern "C" fn shim_comm_reset() {
     let old = OLD_PQ_COMM_METHODS.load(Ordering::Relaxed);
     if !old.is_null() {
-        if let Some(f) = (*old).comm_reset { f(); }
+        if let Some(f) = (*old).comm_reset {
+            f();
+        }
     }
 }
 
 unsafe extern "C" fn shim_flush() -> c_int {
     let old = OLD_PQ_COMM_METHODS.load(Ordering::Relaxed);
     if !old.is_null() {
-        if let Some(f) = (*old).flush { return f(); }
+        if let Some(f) = (*old).flush {
+            return f();
+        }
     }
     0
 }
@@ -85,7 +88,9 @@ unsafe extern "C" fn shim_flush() -> c_int {
 unsafe extern "C" fn shim_flush_if_writable() -> c_int {
     let old = OLD_PQ_COMM_METHODS.load(Ordering::Relaxed);
     if !old.is_null() {
-        if let Some(f) = (*old).flush_if_writable { return f(); }
+        if let Some(f) = (*old).flush_if_writable {
+            return f();
+        }
     }
     0
 }
@@ -93,39 +98,31 @@ unsafe extern "C" fn shim_flush_if_writable() -> c_int {
 unsafe extern "C" fn shim_is_send_pending() -> bool {
     let old = OLD_PQ_COMM_METHODS.load(Ordering::Relaxed);
     if !old.is_null() {
-        if let Some(f) = (*old).is_send_pending { return f(); }
+        if let Some(f) = (*old).is_send_pending {
+            return f();
+        }
     }
     false
 }
 
-unsafe extern "C" fn shim_putmessage(
-    msgtype: c_char,
-    s: *const c_char,
-    len: usize,
-) -> c_int {
+unsafe extern "C" fn shim_putmessage(msgtype: c_char, s: *const c_char, len: usize) -> c_int {
     let old = OLD_PQ_COMM_METHODS.load(Ordering::Relaxed);
     if !old.is_null() {
-        if let Some(f) = (*old).putmessage { return f(msgtype, s, len); }
+        if let Some(f) = (*old).putmessage {
+            return f(msgtype, s, len);
+        }
     }
     0
 }
 
 /// Intercepts WAL data messages to enforce physical-before-logical ordering.
-unsafe extern "C" fn shim_putmessage_noblock(
-    msgtype: c_char,
-    s: *const c_char,
-    len: usize,
-) {
+unsafe extern "C" fn shim_putmessage_noblock(msgtype: c_char, s: *const c_char, len: usize) {
     // WAL data messages: msgtype='d', s[0]='w', bytes 1..8 = LSN (big-endian)
     if msgtype == b'd' as c_char && len >= 17 {
         let sub_type = *s;
         if sub_type == b'w' as c_char {
             let mut lsn_bytes = [0u8; 8];
-            std::ptr::copy_nonoverlapping(
-                s.add(1) as *const u8,
-                lsn_bytes.as_mut_ptr(),
-                8,
-            );
+            std::ptr::copy_nonoverlapping(s.add(1) as *const u8, lsn_bytes.as_mut_ptr(), 8);
             let lsn = u64::from_be_bytes(lsn_bytes);
             wait_for_standby_confirmation(lsn);
         }
@@ -133,7 +130,9 @@ unsafe extern "C" fn shim_putmessage_noblock(
 
     let old = OLD_PQ_COMM_METHODS.load(Ordering::Relaxed);
     if !old.is_null() {
-        if let Some(f) = (*old).putmessage_noblock { f(msgtype, s, len); }
+        if let Some(f) = (*old).putmessage_noblock {
+            f(msgtype, s, len);
+        }
     }
 }
 
@@ -190,11 +189,9 @@ fn skip_standby_slot_names(commit_lsn: pg_sys::XLogRecPtr) -> bool {
     // Don't wait on our own slot
     unsafe {
         if !pg_sys::MyReplicationSlot.is_null() {
-            let my_name = CStr::from_ptr(
-                (*pg_sys::MyReplicationSlot).data.name.data.as_ptr(),
-            )
-            .to_str()
-            .unwrap_or("");
+            let my_name = CStr::from_ptr((*pg_sys::MyReplicationSlot).data.name.data.as_ptr())
+                .to_str()
+                .unwrap_or("");
             if slot_names.iter().any(|n| n == my_name) {
                 return true;
             }
