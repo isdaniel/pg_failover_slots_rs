@@ -79,7 +79,7 @@ wait_for_pg "$SUBSCRIBER_HOST" "subscriber"
 
 # Verify primary has the extension loaded
 EXT_VERSION=$(psql_primary -c "SELECT pg_failover_slots_rs_version();" 2>/dev/null || echo "FAIL")
-if [ "$EXT_VERSION" = "1.0.0" ]; then
+if [ "$EXT_VERSION" = "0.1.0" ]; then
     pass "pg_failover_slots_rs extension loaded on primary (version: $EXT_VERSION)"
 else
     fail "pg_failover_slots_rs extension not loaded on primary (got: $EXT_VERSION)"

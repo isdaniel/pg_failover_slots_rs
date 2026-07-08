@@ -47,8 +47,7 @@ impl PgConn {
     /// including surrounding single quotes.
     pub fn escape_literal(&self, s: &str) -> String {
         let cs = CString::new(s).expect("escape literal NUL");
-        let ptr =
-            unsafe { libpq_sys::PQescapeLiteral(self.conn, cs.as_ptr(), s.len()) };
+        let ptr = unsafe { libpq_sys::PQescapeLiteral(self.conn, cs.as_ptr(), s.len()) };
         if ptr.is_null() {
             error!("pg_failover_slots_rs: PQescapeLiteral failed (out of memory)");
         }
@@ -215,8 +214,7 @@ pub fn remote_connect(connstr: &str, appname: &str) -> Option<PgConn> {
     };
 
     if conn.is_null()
-        || unsafe { libpq_sys::PQstatus(conn) }
-            != libpq_sys::ConnStatusType::CONNECTION_OK
+        || unsafe { libpq_sys::PQstatus(conn) } != libpq_sys::ConnStatusType::CONNECTION_OK
     {
         let errmsg = if conn.is_null() {
             "null connection".to_string()
@@ -250,14 +248,10 @@ pub fn remote_connect(connstr: &str, appname: &str) -> Option<PgConn> {
 
 /// Build a SQL query to fetch slot info from the primary, filtering by the
 /// given list of slot filters.
-pub fn build_slot_filter_query(
-    conn: &PgConn,
-    filters: &[FailoverSlotFilter],
-) -> String {
+pub fn build_slot_filter_query(conn: &PgConn, filters: &[FailoverSlotFilter]) -> String {
     let sv = conn.server_version();
     let _ = sv; // server version available for future use; PG15+ always has two_phase
-    let base =
-        "SELECT slot_name, plugin, database, two_phase, catalog_xmin, \
+    let base = "SELECT slot_name, plugin, database, two_phase, catalog_xmin, \
          restart_lsn, confirmed_flush_lsn \
          FROM pg_catalog.pg_replication_slots \
          WHERE database IS NOT NULL AND (";
@@ -269,17 +263,13 @@ pub fn build_slot_filter_query(
         let escaped = conn.escape_literal(&f.val);
         match f.key {
             FailoverSlotFilterKey::Name => {
-                query.push_str(&format!(
-                    " {op} slot_name OPERATOR(pg_catalog.=) {escaped}"
-                ));
+                query.push_str(&format!(" {op} slot_name OPERATOR(pg_catalog.=) {escaped}"));
             }
             FailoverSlotFilterKey::NameLike => {
                 query.push_str(&format!(" {op} slot_name LIKE {escaped}"));
             }
             FailoverSlotFilterKey::Plugin => {
-                query.push_str(&format!(
-                    " {op} plugin OPERATOR(pg_catalog.=) {escaped}"
-                ));
+                query.push_str(&format!(" {op} plugin OPERATOR(pg_catalog.=) {escaped}"));
             }
         }
         op = "OR";
@@ -324,9 +314,7 @@ pub fn remote_get_primary_slot_info(
         let catalog_xmin = if res.is_null(i, 4) {
             pg_sys::InvalidTransactionId
         } else {
-            pg_sys::TransactionId::from_inner(
-                res.get_value(i, 4).parse::<u32>().unwrap_or(0),
-            )
+            pg_sys::TransactionId::from_inner(res.get_value(i, 4).parse::<u32>().unwrap_or(0))
         };
         let restart_lsn = if res.is_null(i, 5) {
             0u64

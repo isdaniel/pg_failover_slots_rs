@@ -9,7 +9,7 @@ ARG PG_MAJOR=16
 # ---------------------------------------------------------------------------
 # Stage 1: Build the extension with cargo-pgrx
 # ---------------------------------------------------------------------------
-FROM rust:1.92-bookworm AS builder
+FROM rust:1.96-bookworm AS builder
 
 ARG PG_MAJOR
 
@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PATH="/usr/lib/postgresql/${PG_MAJOR}/bin:${PATH}"
 
 # Install cargo-pgrx matching the version used in the project
-RUN cargo install --locked cargo-pgrx --version "=0.16.1"
+RUN cargo install --locked cargo-pgrx --version "=0.19.1"
 
 # Initialize pgrx for the target PG version from system install
 RUN cargo pgrx init --pg${PG_MAJOR} /usr/lib/postgresql/${PG_MAJOR}/bin/pg_config

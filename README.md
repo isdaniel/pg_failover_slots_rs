@@ -9,10 +9,11 @@ is sent downstream.
 This is a Rust rewrite of the original C extension
 [EnterpriseDB/pg_failover_slots](https://github.com/EnterpriseDB/pg_failover_slots),
 built with the [pgrx](https://github.com/pgcentralfoundation/pgrx) framework
-(v0.16.1).
+(v0.19.1).
 
 ## Supported PostgreSQL Versions
 
+- PostgreSQL 14
 - PostgreSQL 15
 - PostgreSQL 16
 - PostgreSQL 17
@@ -48,20 +49,39 @@ message, the shim checks that the named physical standby slots (configured via
 This guarantees the standby has received all WAL before the logical subscriber
 sees it.
 
+## Relationship to PostgreSQL 17+ Native Slot Synchronization
+
+PostgreSQL 17 introduced native logical slot failover: the `failover` slot
+option, the `sync_replication_slots` GUC and `pg_sync_replication_slots()`
+function (standby-side sync), and `synchronized_standby_slots` (the primary-side
+physical-before-logical guarantee). Where those cover your needs on PG17+, the
+native mechanism is the first choice.
+
+This extension remains useful when you need a **single mechanism that works
+uniformly across PostgreSQL 15–18** (including versions without native slot
+sync), or want its filtering (`synchronize_slot_names`) and
+physical-before-logical enforcement (`standby_slot_names`) with consistent
+behavior across a mixed-version fleet. Do not enable both this extension's
+synchronization and the native `sync_replication_slots` for the same slots on
+the same standby — pick one authority per slot to avoid conflicting updates.
+
 ## Building
 
 ### Prerequisites
 
-- Rust toolchain (1.85+)
-- [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) v0.16.1
+- Rust toolchain (1.96+)
+- [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) v0.19.1
 - PostgreSQL development headers (`postgresql-server-dev-XX`)
 - libpq development files (`libpq-dev`)
 - `pkg-config`, `libclang-dev`, `clang`
 
+This repository pins the Rust toolchain to 1.96.0 via `rust-toolchain.toml`,
+so `cargo` auto-selects the correct version when you build.
+
 ### Initialize pgrx
 
 ```sh
-cargo install --locked cargo-pgrx --version "=0.16.1"
+cargo install --locked cargo-pgrx --version "=0.19.1"
 cargo pgrx init --pg16 $(which pg_config)
 ```
 
@@ -129,7 +149,7 @@ after a configuration reload (SIGHUP) unless noted otherwise.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `pg_failover_slots_rs.version` | string | `"1.2.0"` | Extension version (internal, read-only). |
+| `pg_failover_slots_rs.version` | string | `"0.1.0"` | Extension version (internal, read-only). |
 
 ## Example Setup
 
@@ -179,9 +199,9 @@ The test runs six phases:
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
-| [pgrx](https://crates.io/crates/pgrx) | 0.16.1 | PostgreSQL extension framework |
+| [pgrx](https://crates.io/crates/pgrx) | 0.19.1 | PostgreSQL extension framework |
 | [libpq-sys](https://crates.io/crates/libpq-sys) | 0.8.0 | FFI bindings for libpq (client connections to primary) |
-| [pgrx-tests](https://crates.io/crates/pgrx-tests) | 0.16.1 | Test framework (dev dependency) |
+| [pgrx-tests](https://crates.io/crates/pgrx-tests) | 0.19.1 | Test framework (dev dependency) |
 
 The `libpq-sys` crate handles library discovery automatically via `pkg-config`
 or `pg_config`. No `build.rs` is needed.
